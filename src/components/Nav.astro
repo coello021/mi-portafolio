@@ -1,0 +1,30 @@
+---
+const path = Astro.url.pathname;
+---
+<header class="site-header">
+  <nav class="wrap">
+    <a href="/" class={path === '/' ? 'active' : ''}>Home</a>
+    <a href="/sobre-mi" class={path === '/sobre-mi' ? 'active' : ''}>Sobre mí</a>
+  </nav>
+</header>
+
+<style>
+  .site-header{
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--bg);
+    padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  nav{ display:flex; justify-content:center; gap:36px; flex-wrap:wrap; }
+  nav a{
+    font-size:13.5px; font-weight:600; letter-spacing:1.2px;
+    color:var(--cream-dim); padding-bottom:8px;
+    border-bottom:2px solid transparent;
+    transition:color .2s, border-color .2s;
+    text-transform:uppercase;
+  }
+  nav a:hover{ color:var(--cream); }
+  nav a.active{ color:var(--cream); border-bottom-color:var(--accent); }
+</style>
