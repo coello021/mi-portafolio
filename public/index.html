@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Red de Sucursales Vidrí — Mapa en vivo</title>
 <meta name="description" content="Rutas de distribución desde CD Nejapa, cierres viales y tráfico en tiempo real.">
@@ -84,6 +85,14 @@ a.btn{display:inline-block;margin-top:6px;background:var(--rojo);color:#fff;text
 details.pasos-d{border:1px solid var(--line);border-radius:10px;margin:12px 0;background:var(--bg)}
 details.pasos-d summary{cursor:pointer;padding:10px 12px;font-weight:500}
 details.pasos-d ol.pasos{padding:0 12px 8px}
+
+.leyenda hr{border:0;border-top:1px solid var(--line);margin:5px 0}
+.leyenda .lg{display:inline-block;vertical-align:middle;margin-right:8px;flex:none}
+.leyenda .lg-cd{width:9px;height:9px;background:var(--rojo);transform:rotate(45deg);border:1.5px solid #fff;box-shadow:0 0 0 1px var(--rojo);margin:0 9px 0 6px}
+.leyenda .lg-suc{width:11px;height:11px;border-radius:50%;background:#777;border:2px solid #fff;box-shadow:0 0 0 1px #777;margin:0 7px 0 5px}
+.leyenda .lg-cie{width:18px;height:18px;border-radius:50%;border:2px solid var(--afect);background:rgba(199,69,58,.22);margin-right:5px}
+.leyenda .lg-venc{border-style:dashed;opacity:.65}
+.leyenda .lg-traf{width:30px;height:5px;border-radius:3px;background:linear-gradient(90deg,#2e9f4a,#f2c200,#e8742c,#c0261b,#6e0c0c);margin-right:5px}
 @media (max-width:820px){
   #app{grid-template-columns:1fr;grid-template-rows:48vh 1fr}
   #mapa{order:-1}
@@ -172,9 +181,17 @@ function aplicarCapaTrafico(){
 }
 function avisar(txt, ok){ const a=$('#aviso'); a.textContent=txt; a.className=ok?'ok':''; a.style.display='block'; }
 
+let leyendaEl=null;
+function htmlLeyenda(){
+  return `<div><i style="background:${COLOR.Libre}"></i>Ruta libre</div><div><i style="background:${COLOR['Precaución']}"></i>Ruta con precaución</div><div><i style="background:${COLOR.Afectada}"></i>Ruta afectada</div><hr>
+  <div><span class="lg lg-cd"></span>CD Nejapa (salida)</div>
+  <div><span class="lg lg-suc"></span>Sucursal (color = estado)</div>
+  <div><span class="lg lg-cie"></span>Zona de cierre vial</div>
+  <div><span class="lg lg-cie lg-venc"></span>Cierre vencido</div>
+  ${S.trafico?'<hr><div><span class="lg lg-traf"></span>Tráfico: fluido → detenido</div>':''}`;
+}
 const Leyenda = L.control({position:'bottomright'});
-Leyenda.onAdd=()=>{ const d=L.DomUtil.create('div','leyenda');
-  d.innerHTML=`<div><i style="background:${COLOR.Libre}"></i>Ruta libre</div><div><i style="background:${COLOR['Precaución']}"></i>Precaución</div><div><i style="background:${COLOR.Afectada}"></i>Afectada</div>`; return d; };
+Leyenda.onAdd=()=>{ leyendaEl=L.DomUtil.create('div','leyenda'); leyendaEl.innerHTML=htmlLeyenda(); return leyendaEl; };
 Leyenda.addTo(map);
 
 // ---------- datos derivados ----------
@@ -373,6 +390,7 @@ $('#cuerpo').addEventListener('change',e=>{
   if(S.trafico){ aplicarCapaTrafico(); refrescarTrafico(); setInterval(()=>{ if(!document.hidden) refrescarTrafico(); },300000); }
   else avisar('Tráfico en vivo desactivado (sin llave configurada o sin servidor). Se muestran los tiempos estimados fijos.', false);
 
+  if(leyendaEl) leyendaEl.innerHTML=htmlLeyenda();
   dibujarMapa(); ajustarVista(); render();
 })();
 })();

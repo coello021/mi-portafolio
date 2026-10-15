@@ -28,6 +28,11 @@ export default async (req) => {
   const s = data?.routes?.[0]?.summary;
   if (!s) return json({ error: 'Respuesta sin ruta' }, 502);
 
+  // Diagnóstico: /api/eta?codigo=15&debug=1 muestra los segundos crudos que devolvió TomTom.
+  if (new URL(req.url).searchParams.get('debug') === '1') {
+    return json({ resumen_tomtom: s, parametros: 'traffic=true, departAt=now, computeTravelTimeFor=all' }, 200, 'no-store');
+  }
+
   const vivo = Math.round(s.travelTimeInSeconds / 60);
   const libre = Math.round((s.noTrafficTravelTimeInSeconds ?? s.travelTimeInSeconds - (s.trafficDelayInSeconds || 0)) / 60);
   return new Response(JSON.stringify({

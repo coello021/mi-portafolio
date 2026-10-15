@@ -14,3 +14,9 @@
   for = "/data/*"
   [headers.values]
     Cache-Control = "public, max-age=300"
+
+# Pide a los buscadores no indexar nada (no es protección de acceso: quien tenga el enlace puede abrirlo).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

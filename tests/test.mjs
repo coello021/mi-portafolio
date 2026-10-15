@@ -53,6 +53,8 @@ const d = await r.json();
 assert.equal(r.status, 200); assert.equal(d.min_vivo, 30); assert.equal(d.min_sin_trafico, 25); assert.equal(d.retraso_min, 5); assert.equal(d.km, 18.5);
 assert.match(llamadas.at(-1), /calculateRoute\/13\.80527,-89\.23599:13\.67597,-89\.26437\/json/);
 assert.match(llamadas.at(-1), /traffic=true/); ok('eta: cálculo y URL correctos (CD -> Merliot)');
+r = await eta.default(new Request('http://x/api/eta?codigo=15&debug=1'));
+const dbg = await r.json(); assert.equal(dbg.resumen_tomtom.trafficDelayInSeconds, 300); assert.ok(!JSON.stringify(dbg).includes('LLAVE_DE_PRUEBA')); ok('eta debug: devuelve segundos crudos sin la llave');
 assert.equal((await eta.default(new Request('http://x/api/eta?codigo=CD'))).status, 400); ok('eta: no acepta CD como destino');
 assert.equal((await eta.default(new Request('http://x/api/eta?codigo=999'))).status, 400); ok('eta: código desconocido => 400');
 
