@@ -93,3 +93,15 @@ En la pestaña **Cierres** hay un botón para subir el reporte JSON (`version`, 
 - El mapa muestra "Cierres y rutas: corte del …" y un aviso naranja si pasan más de 2 días sin actualizar.
 
 Requiere Node 22 (`@netlify/blobs`), ya configurado en `netlify.toml`.
+
+## Tiempo de viaje: perfil de camión y margen (estimado)
+
+El tiempo en vivo se calcula con TomTom como **camión** y se le suma un **margen** por semáforos, paradas y maniobras, que TomTom no modela. Es un **estimado, no un dato exacto**: la página lo dice así. Se ajusta en Netlify (Environment variables, alcance Functions), sin tocar código; tras cambiar una, hay que volver a desplegar:
+
+| Variable | Qué hace | Por defecto |
+|---|---|---|
+| `CAMION_VEL_MAX` | Velocidad máxima del camión (km/h) | 80 |
+| `CAMION_PESO_KG` | Peso del camión (kg); 0 = sin restricciones de peso | 0 |
+| `MARGEN_PORCENTAJE` | Margen sobre el tiempo de TomTom (0 a 200) | 20 |
+
+El 20 % es una suposición inicial, no una medición. Para calibrarlo, compara con tiempos reales de tus viajes (GPS o bitácora) y ajusta `MARGEN_PORCENTAJE`. Si TomTom no acepta el modo camión para una ruta, se calcula como carro y la página lo indica.

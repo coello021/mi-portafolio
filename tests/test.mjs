@@ -53,6 +53,16 @@ const d = await r.json();
 assert.equal(r.status, 200); assert.equal(d.min_vivo, 30); assert.equal(d.min_sin_trafico, 25); assert.equal(d.retraso_min, 5); assert.equal(d.km, 18.5);
 assert.match(llamadas.at(-1), /calculateRoute\/13\.80527,-89\.23599:13\.67597,-89\.26437\/json/);
 assert.match(llamadas.at(-1), /traffic=true/); ok('eta: cálculo y URL correctos (CD -> Merliot)');
+assert.match(llamadas.at(-1), /travelMode=truck/); assert.match(llamadas.at(-1), /vehicleCommercial=true/); assert.match(llamadas.at(-1), /vehicleMaxSpeed=80/);
+assert.ok(!/vehicleWeight/.test(llamadas.at(-1))); assert.equal(d.modo, 'camion'); assert.equal(d.margen_pct, 20); assert.equal(d.min_ajustado, 36); ok('eta: calcula como camión (80 km/h) con margen del 20 % => 30 -> 36 min');
+process.env.CAMION_PESO_KG = '7500'; process.env.MARGEN_PORCENTAJE = '0'; process.env.CAMION_VEL_MAX = '70';
+{ const x = await (await eta.default(new Request('http://x/api/eta?codigo=15'))).json();
+  assert.match(llamadas.at(-1), /vehicleWeight=7500/); assert.match(llamadas.at(-1), /vehicleMaxSpeed=70/); assert.equal(x.min_ajustado, 30); }
+delete process.env.CAMION_PESO_KG; delete process.env.MARGEN_PORCENTAJE; delete process.env.CAMION_VEL_MAX; ok('eta: peso, velocidad y margen configurables por variables de entorno');
+{ const f0 = globalThis.fetch; const urls = [];
+  globalThis.fetch = async (u) => { urls.push(String(u)); return String(u).includes('travelMode=truck') ? new Response('x', { status: 400 }) : f0(u); };
+  const x = await (await eta.default(new Request('http://x/api/eta?codigo=15'))).json();
+  assert.equal(x.modo, 'carro'); assert.equal(urls.length, 2); globalThis.fetch = f0; ok('eta: si TomTom rechaza el modo camión, calcula como carro y lo indica'); }
 r = await eta.default(new Request('http://x/api/eta?codigo=15&debug=1'));
 const dbg = await r.json(); assert.equal(dbg.resumen_tomtom.trafficDelayInSeconds, 300); assert.ok(!JSON.stringify(dbg).includes('LLAVE_DE_PRUEBA')); ok('eta debug: devuelve segundos crudos sin la llave');
 assert.equal((await eta.default(new Request('http://x/api/eta?codigo=CD'))).status, 400); ok('eta: no acepta CD como destino');

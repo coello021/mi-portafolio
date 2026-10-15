@@ -320,8 +320,8 @@ function renderCierres(){
 function statsHTML(r, d, modo){
   let ahora, a1, clase='';
   if(modo==='vivo'){
-    ahora=fmtMin(d.min_vivo);
-    a1=d.retraso_min>0?`ahora · incluye +${d.retraso_min} min por tráfico`:'ahora · con el tráfico actual';
+    ahora='≈ '+fmtMin(d.min_ajustado ?? d.min_vivo);
+    a1='estimado'+(d.modo==='camion'?' para camión':'')+(d.retraso_min>0?` · +${d.retraso_min} min por tráfico`:'');
     clase=d.retraso_min>=10?'afect':d.retraso_min>=3?'prec':'';
   } else if(modo==='carga'){
     ahora='…'; a1='consultando tráfico en vivo';
@@ -368,7 +368,8 @@ async function cargarEta(codigo, r){
   if(!d){ st.innerHTML=statsHTML(r,null,'fallo'); return; }
   st.innerHTML=statsHTML(r,d,'vivo');
   const h=new Date(d.actualizado).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit'});
-  $('#eta-nota').innerHTML=`Tiempo en vivo de TomTom (${h}) · la ruta de TomTom puede diferir de la dibujada.<br>`+esc('Horas pico: mañana '+fmtMin(r.min_trafico_am)+' · tarde '+fmtMin(r.min_trafico_pm));
+  const base=`TomTom (${d.modo==='camion'?'camión':'carro'}): ${fmtMin(d.min_vivo)}`+(d.margen_pct>0?` + ${d.margen_pct} % por semáforos, paradas y maniobras`:'');
+  $('#eta-nota').innerHTML=esc(`Estimado, no exacto. ${base} (${h}). La ruta de TomTom puede diferir de la dibujada.`)+(d.modo==='carro'?'<br>'+esc('TomTom no tuvo perfil de camión para esta ruta: se calculó como carro.'):'')+'<br>'+esc('Horas pico: mañana '+fmtMin(r.min_trafico_am)+' · tarde '+fmtMin(r.min_trafico_pm));
 }
 
 // ---------- interacción ----------
