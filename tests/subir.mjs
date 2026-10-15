@@ -35,6 +35,9 @@ assert.equal(parseCorte('texto raro'), null); ok('fechas de corte en español se
 // sin PIN configurado
 delete process.env.ADMIN_PIN;
 assert.equal((await post({ pin: 'x', reporte: {} })).status, 503); ok('sin ADMIN_PIN => 503');
+process.env.adminPin2 = 'pin-de-prueba';
+assert.equal((await post({ pin: 'mal', reporte: {} }, '4.4.4.4')).status, 401); ok('también lee el PIN desde la variable adminPin2');
+delete process.env.adminPin2;
 process.env.ADMIN_PIN = 'pin-de-prueba';
 
 assert.equal((await post({ pin: 'mal', reporte: {} }, '2.2.2.2')).status, 401); ok('PIN incorrecto => 401');

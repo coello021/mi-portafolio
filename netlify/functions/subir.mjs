@@ -13,8 +13,9 @@ function fallo(ip) { const f = fallos.get(ip); fallos.set(ip, { n: (f && Date.no
 
 export default async (req, context) => {
   if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405);
-  const pin = (process.env.ADMIN_PIN || '').trim();
-  if (!pin) return json({ error: 'La subida no está configurada (falta ADMIN_PIN en Netlify).' }, 503);
+  // El PIN vive en una variable de entorno de Netlify: ADMIN_PIN o, si se prefiere, adminPin2.
+  const pin = (process.env.ADMIN_PIN || process.env.adminPin2 || '').trim();
+  if (!pin) return json({ error: 'La subida no está configurada (falta la variable del PIN en Netlify).' }, 503);
 
   const ip = context?.ip || req.headers.get('x-nf-client-connection-ip') || 'desconocida';
   if (bloqueado(ip)) return json({ error: 'Demasiados intentos fallidos. Espera 15 minutos.' }, 429);

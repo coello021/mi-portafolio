@@ -83,7 +83,7 @@ Edita `public/data/cierres.json`. Cada cierre tiene: `id`, `nombre`, `estado` (L
 
 En la pestaña **Cierres** hay un botón para subir el reporte JSON (`version`, `corte`, `cierres`, `rutas`).
 
-- Pide un **PIN**, que se guarda en Netlify como variable de entorno `ADMIN_PIN` (Functions y Runtime, secreta). No lo escribas en ningún archivo ni lo compartas.
+- Pide un **PIN**, que se guarda en Netlify como variable de entorno `ADMIN_PIN` (o `adminPin2`), con alcance a Functions; de preferencia marcada como secreta. No lo escribas en ningún archivo ni lo compartas.
 - **Nunca retrocede:** solo se acepta un reporte cuyo `corte` sea más nuevo que el publicado. Uno igual o más viejo se rechaza.
 - Antes de aplicar muestra una **vista previa** (cierres nuevos, que se quitan, que cambian, rutas que cambian de estado) y avisa si el reporte omite cierres que seguían vigentes.
 - Valida el formato: coordenadas dentro de El Salvador, estados válidos, fechas `AAAA-MM-DD`, tamaños máximos.
