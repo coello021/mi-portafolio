@@ -5,6 +5,9 @@
   "description": "Mapa interactivo de la red de sucursales Vidrí con tráfico en vivo",
   "scripts": {
     "dev": "netlify dev",
-    "test": "node tests/test.mjs"
+    "test": "node tests/test.mjs && node tests/subir.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.4"
   }
 }

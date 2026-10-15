@@ -9,7 +9,7 @@ public/index.html            la página (todo el código del mapa)
 public/data/sucursales.json  sucursales y CD
 public/data/rutas.json       rutas (polilínea, pasos, tiempos fijos)
 public/data/cierres.json     cierres viales (se edita a mano)
-netlify/functions/           tiles (tráfico), eta (tiempo en vivo), estado
+netlify/functions/           tiles, eta, estado, cierres (lee) y subir (recibe el reporte)
 netlify/lib/tope.mjs         contador diario y lectura de la llave
 netlify.toml                 configuración de Netlify (reemplaza la de Astro)
 tests/test.mjs               pruebas con TomTom simulado
@@ -78,3 +78,18 @@ Edita `public/data/cierres.json`. Cada cierre tiene: `id`, `nombre`, `estado` (L
 - **Netlify gratis:** puede usar créditos mensuales compartidos entre tus sitios; cada despliegue y el ancho de banda consumen. Revisa tu uso en Netlify → Billing.
 - **Mapa base:** los mosaicos públicos de OpenStreetMap son para uso ligero; si el sitio crece, cambia a un proveedor de mosaicos.
 - **Tiempo en vivo ≠ ruta dibujada:** TomTom calcula su propia ruta más rápida; puede diferir de la ruta guardada en `rutas.json`.
+
+## Subir el reporte de cierres (botón "Actualizar cierres")
+
+En la pestaña **Cierres** hay un botón para subir el reporte JSON (`version`, `corte`, `cierres`, `rutas`).
+
+- Pide un **PIN**, que se guarda en Netlify como variable de entorno `ADMIN_PIN` (Functions y Runtime, secreta). No lo escribas en ningún archivo ni lo compartas.
+- **Nunca retrocede:** solo se acepta un reporte cuyo `corte` sea más nuevo que el publicado. Uno igual o más viejo se rechaza.
+- Antes de aplicar muestra una **vista previa** (cierres nuevos, que se quitan, que cambian, rutas que cambian de estado) y avisa si el reporte omite cierres que seguían vigentes.
+- Valida el formato: coordenadas dentro de El Salvador, estados válidos, fechas `AAAA-MM-DD`, tamaños máximos.
+- Solo toma del reporte los cierres y el estado/afectación/recomendación de cada ruta; la geometría de las rutas no se toca.
+- Guarda lo publicado en Netlify Blobs y conserva las últimas 10 versiones anteriores. Si Blobs no estuviera disponible en tu plan, el botón avisa y no cambia nada; el mapa sigue con los datos base.
+- El PIN tiene un freno de 5 intentos fallidos por 15 minutos (de mejor esfuerzo, no es exacto entre instancias).
+- El mapa muestra "Cierres y rutas: corte del …" y un aviso naranja si pasan más de 2 días sin actualizar.
+
+Requiere Node 22 (`@netlify/blobs`), ya configurado en `netlify.toml`.

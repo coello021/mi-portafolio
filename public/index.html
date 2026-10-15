@@ -93,6 +93,20 @@ details.pasos-d ol.pasos{padding:0 12px 8px}
 .leyenda .lg-cie{width:18px;height:18px;border-radius:50%;border:2px solid var(--afect);background:rgba(199,69,58,.22);margin-right:5px}
 .leyenda .lg-venc{border-style:dashed;opacity:.65}
 .leyenda .lg-traf{width:30px;height:5px;border-radius:3px;background:linear-gradient(90deg,#2e9f4a,#f2c200,#e8742c,#c0261b,#6e0c0c);margin-right:5px}
+#sello{margin:6px 16px 0;font-size:12px;color:var(--muted)}
+#sello.viejo{color:var(--fg);border-left:3px solid var(--naranja);background:rgba(222,122,44,.12);padding:6px 9px;font-size:12.5px}
+.btn-sec{border:1px solid var(--fg);background:transparent;border-radius:8px;padding:7px 12px;font-weight:500;margin-bottom:10px;width:100%}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:16px 18px;width:min(560px,94vw);max-height:90vh;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog label{display:block;margin:10px 0 2px;font-weight:500}
+dialog input{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+.dlg-acc{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.dlg-acc button{border:1px solid var(--line);background:transparent;border-radius:8px;padding:7px 14px}
+.dlg-acc button.pri{background:var(--rojo);border-color:var(--rojo);color:#fff}
+.dlg-acc button:disabled{opacity:.4;cursor:not-allowed}
+.err{border-left:4px solid var(--afect);background:rgba(199,69,58,.1);padding:8px 10px;margin:10px 0;border-radius:6px}
+.adv{border-left:4px solid var(--prec);background:rgba(222,122,44,.12);padding:8px 10px;margin:8px 0;border-radius:6px}
+.res ul{margin:4px 0 8px;padding-left:18px}
 @media (max-width:820px){
   #app{grid-template-columns:1fr;grid-template-rows:48vh 1fr}
   #mapa{order:-1}
@@ -108,6 +122,7 @@ details.pasos-d ol.pasos{padding:0 12px 8px}
       <p>Rutas desde CD Nejapa · cierres viales · tráfico en vivo</p>
     </header>
     <div id="aviso" role="status"></div>
+    <div id="sello"></div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="tab-suc" aria-selected="true">Sucursales</button>
       <button class="tab" role="tab" id="tab-cie" aria-selected="false">Cierres</button>
@@ -117,6 +132,14 @@ details.pasos-d ol.pasos{padding:0 12px 8px}
   <main id="mapa" aria-label="Mapa"></main>
 </div>
 
+<dialog id="dlg" aria-labelledby="dlg-t">
+  <h2 id="dlg-t" style="font-size:20px">Actualizar cierres</h2>
+  <p class="sub">Sube el reporte JSON. Solo se acepta si es más nuevo que lo publicado; nunca retrocede.</p>
+  <label for="dlg-pin">PIN</label><input type="password" id="dlg-pin" autocomplete="off">
+  <label for="dlg-file">Archivo del reporte (.json)</label><input type="file" id="dlg-file" accept=".json,application/json">
+  <div id="dlg-res" class="res" aria-live="polite"></div>
+  <div class="dlg-acc"><button id="dlg-cancel" type="button">Cancelar</button><button id="dlg-rev" type="button" disabled>Revisar</button><button id="dlg-ok" type="button" class="pri" disabled>Aplicar cambios</button></div>
+</dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 (function(){
@@ -285,7 +308,7 @@ function renderLista(){
 // actualiza lista sin perder el foco del buscador
 function renderListaSoloItems(){ const f=$('#q'); const pos=f.selectionStart; renderLista(); const n=$('#q'); n.focus(); n.setSelectionRange(pos,pos); }
 function renderCierres(){
-  $('#cuerpo').innerHTML = `<p class="sub">Los cierres se mantienen a mano (VMT, MOP y FOVIAL no publican API). Revisa siempre la fecha de vigencia.</p>` +
+  $('#cuerpo').innerHTML = `<button class="btn-sec" id="btn-actualizar">Actualizar cierres (subir reporte)…</button><p class="sub">VMT, MOP y FOVIAL no publican una API: los cierres vienen del último reporte subido. Revisa siempre la fecha de vigencia.</p>` +
     S.cierres.map(c=>{const v=vigencia(c);return `
     <div class="caja ${v.vencido?'venc':''}" data-cie="${esc(c.id)}" style="cursor:pointer">
       <h3>${esc(c.nombre)}</h3>
@@ -363,6 +386,7 @@ function seleccionar(cod){
 $('#tab-suc').onclick=()=>{S.tab='suc';S.sel=null;dibujarMapa();render();};
 $('#tab-cie').onclick=()=>{S.tab='cie';S.sel=null;dibujarMapa();render();};
 $('#cuerpo').addEventListener('click',e=>{
+  if(e.target.closest('#btn-actualizar')) return abrirDlg();
   const z=e.target.closest('[data-zona]'), es=e.target.closest('[data-estado]'), it=e.target.closest('[data-cod]'), ci=e.target.closest('[data-cie]');
   if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
   else if(es){S.estado=es.dataset.estado;dibujarMapa();ajustarVista();render();}
@@ -376,13 +400,74 @@ $('#cuerpo').addEventListener('change',e=>{
   if(id==='flujo'||id==='incidentes') aplicarCapaTrafico(); else dibujarMapa();
 });
 
+// ---------- datos ----------
+async function cargarDatos(){
+  try{
+    const [suc,rutas,cierres,meta]=await Promise.all([getJSON('data/sucursales.json'),getJSON('data/rutas.json'),getJSON('data/cierres.json'),getJSON('data/meta.json').catch(()=>null)]);
+    S.cd=suc.find(s=>s.codigo==='CD'); S.suc=suc.filter(s=>s.codigo!=='CD');
+    S.rutas.clear(); rutas.forEach(r=>S.rutas.set(String(r.codigo),r)); S.cierres=cierres; S.meta=meta;
+  }catch(e){ return false; }
+  try{ // último reporte subido (si existe) sobre los datos base
+    const a=await getJSON('/api/cierres');
+    if(a && a.origen==='subido'){
+      S.cierres=a.cierres;
+      for(const [cod,o] of Object.entries(a.rutas||{})){ const r=S.rutas.get(cod); if(r) Object.assign(r,o); }
+      S.meta={corte:a.corte,corte_iso:a.corte_iso,subido:a.subido,origen:'subido'};
+    }
+  }catch(e){}
+  pintarSello();
+  return true;
+}
+function pintarSello(){
+  const m=S.meta, el=$('#sello'); if(!m||!m.corte_iso){ el.textContent=''; return; }
+  const c=new Date(m.corte_iso), h=(Date.now()-c)/36e5;
+  const f=c.toLocaleString('es-SV',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
+  if(h>48){ el.className='viejo'; el.textContent=`⚠ Cierres sin actualizar desde hace ${Math.floor(h/24)} días (corte: ${f}). Confirma antes de despachar.`; }
+  else { el.className=''; el.textContent=`Cierres y rutas: corte del ${f}${m.origen==='subido'?'':' (datos base)'}`; }
+}
+
+// ---------- subir reporte ----------
+let reporte=null;
+const dlg=$('#dlg');
+function abrirDlg(){ reporte=null; $('#dlg-res').innerHTML=''; $('#dlg-file').value=''; $('#dlg-rev').disabled=true; $('#dlg-ok').disabled=true; dlg.showModal(); }
+$('#dlg-cancel').onclick=()=>{ $('#dlg-pin').value=''; dlg.close(); };
+$('#dlg-file').onchange=async e=>{
+  reporte=null; $('#dlg-ok').disabled=true; $('#dlg-rev').disabled=true;
+  const f=e.target.files[0]; if(!f) return;
+  try{ reporte=JSON.parse(await f.text()); $('#dlg-rev').disabled=false; $('#dlg-res').innerHTML=`<div class="sub">Archivo listo: ${esc(f.name)}. Pulsa “Revisar”.</div>`; }
+  catch{ $('#dlg-res').innerHTML='<div class="err">El archivo no es un JSON válido.</div>'; }
+};
+async function enviar(modo){
+  const r=await fetch('/api/cierres/subir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:$('#dlg-pin').value,reporte,modo})});
+  let d={}; try{ d=await r.json(); }catch{} return {status:r.status,d};
+}
+const lista=(t,a)=>a.length?`<b>${t}</b><ul>${a.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'';
+$('#dlg-rev').onclick=async()=>{
+  $('#dlg-ok').disabled=true; $('#dlg-res').innerHTML='<div class="sub">Revisando…</div>';
+  let r; try{ r=await enviar('previa'); }catch{ $('#dlg-res').innerHTML='<div class="err">No se pudo contactar al servidor.</div>'; return; }
+  const {status,d}=r;
+  if(status!==200){ $('#dlg-res').innerHTML=`<div class="err"><b>${esc(d.error||'Error '+status)}</b>${d.detalles?`<ul>${d.detalles.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}</div>`; return; }
+  const c=d.diferencias.cierres, rt=d.diferencias.rutas;
+  $('#dlg-res').innerHTML=`<div><b>Corte nuevo:</b> ${esc(d.corte_nuevo)}<br><b>Corte publicado:</b> ${esc(d.corte_actual)}</div>
+    ${d.diferencias.advertencias.map(a=>`<div class="adv">⚠ ${esc(a)}</div>`).join('')}
+    <p>Cierres: ${c.total_actual} → <b>${c.total_nuevo}</b></p>
+    ${lista('Nuevos',c.nuevos.map(x=>x.nombre))}${lista('Se quitan',c.quitados.map(x=>x.nombre+(x.vigente_hasta?` (hasta ${x.vigente_hasta})`:'')))}${lista('Cambian',c.cambiados.map(x=>x.nombre+' ('+x.campos.join(', ')+')'))}
+    ${lista('Rutas con cambios',rt.map(x=>x.sucursal+(x.cambia_estado?`: ${x.de} → ${x.a}`:': cambia el texto de afectación')))}
+    ${(!c.nuevos.length&&!c.quitados.length&&!c.cambiados.length&&!rt.length)?'<div class="sub">Sin diferencias con lo publicado (solo cambia la fecha de corte).</div>':''}`;
+  $('#dlg-ok').disabled=false;
+};
+$('#dlg-ok').onclick=async()=>{
+  $('#dlg-ok').disabled=true; $('#dlg-rev').disabled=true;
+  const {status,d}=await enviar('aplicar');
+  if(status!==200){ $('#dlg-res').innerHTML=`<div class="err"><b>${esc(d.error||'Error '+status)}</b>${d.detalles?`<ul>${d.detalles.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}</div>`; $('#dlg-rev').disabled=false; return; }
+  $('#dlg-pin').value=''; dlg.close();
+  await cargarDatos(); S.sel=null; dibujarMapa(); render();
+  avisar(`Cierres actualizados (corte: ${d.corte}).`, true);
+};
+
 // ---------- arranque ----------
 (async function init(){
-  try{
-    const [suc,rutas,cierres]=await Promise.all([getJSON('data/sucursales.json'),getJSON('data/rutas.json'),getJSON('data/cierres.json')]);
-    S.cd=suc.find(s=>s.codigo==='CD'); S.suc=suc.filter(s=>s.codigo!=='CD');
-    rutas.forEach(r=>S.rutas.set(String(r.codigo),r)); S.cierres=cierres;
-  }catch(e){ $('#cuerpo').innerHTML='<div class="vacio">No se pudieron cargar los datos.</div>'; return; }
+  if(!(await cargarDatos())){ $('#cuerpo').innerHTML='<div class="vacio">No se pudieron cargar los datos.</div>'; return; }
 
   try{ const st=await getJSON('/api/estado'); S.trafico=!!st.trafico; }catch{ S.trafico=false; }
   if(S.trafico){ aplicarCapaTrafico(); refrescarTrafico(); setInterval(()=>{ if(!document.hidden) refrescarTrafico(); },300000); }
