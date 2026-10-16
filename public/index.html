@@ -482,15 +482,15 @@ function renderLista(){
   const zonas=['Todas',...new Set(S.suc.map(s=>s.zona))];
   const vis=visibles();
   $('#cuerpo').innerHTML=`
-    <input type="search" id="q" placeholder="Buscar sucursal, municipio o código" value="${esc(S.q)}" aria-label="Buscar sucursal">
+    <input type="text" id="q" name="filtro-sucursal" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Buscar sucursal, municipio o código" value="${esc(S.q)}" aria-label="Buscar sucursal">
     <div class="chips" aria-label="Zona">${zonas.map(z=>`<button class="chip" data-zona="${esc(z)}" aria-pressed="${S.zona===z}">${esc(z)}</button>`).join('')}</div>
-    <div class="cuenta">${vis.length} sucursal${vis.length===1?'':'es'}. Elige una para ver su ruta en vivo.</div>
+    <div class="cuenta">${vis.length} sucursal${vis.length===1?'':'es'}${S.q?` para «${esc(S.q)}»`:''}. ${vis.length?'Elige una para ver su ruta en vivo.':''}${S.q?` <button class="chip" data-limpiar>Borrar búsqueda</button>`:''}</div>
     ${vis.length? vis.map(s=>{const r=S.rutas.get(s.codigo);return `
       <button class="item" data-cod="${esc(s.codigo)}">
         <span class="punto" style="background:${r?COLOR[r.estado]:'#8da2b0'}"></span>
         <span><b>${esc(s.sucursal)}</b><small>${esc(s.municipio)}, ${esc(s.zona)}</small></span>
         <span class="t">${r?`${r.km} km<small>${fmtMin(r.minutos)}</small>`:''}</span>
-      </button>`}).join('') : '<div class="vacio">Ninguna sucursal coincide con el filtro.</div>'}`;
+      </button>`}).join('') : `<div class="vacio">Ninguna sucursal coincide${S.q?' con lo que hay escrito en el buscador':' con la zona elegida'}.</div>`}`;
   const q=$('#q'); q.addEventListener('input',()=>{S.q=q.value;dibujarMapa();renderListaSoloItems();});
 }
 function renderListaSoloItems(){ const f=$('#q'); const pos=f.selectionStart; renderLista(); const n=$('#q'); n.focus(); n.setSelectionRange(pos,pos); }
@@ -632,7 +632,8 @@ $('#cuerpo').addEventListener('click',e=>{
   if(e.target.closest('#btn-actualizar')) return abrirDlg();
   const z=e.target.closest('[data-zona]'), it=e.target.closest('[data-cod]'), ci=e.target.closest('[data-cie]'),
         al=e.target.closest('[data-alt]'), tr=e.target.closest('[data-t]'), ic=e.target.closest('[data-inc]');
-  if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
+  if(e.target.closest('[data-limpiar]')){ S.q=''; dibujarMapa(); ajustarVista(); render(); }
+  else if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
   else if(it) seleccionar(it.dataset.cod);
   else if(al) elegirAlt(+al.dataset.alt);
   else if(tr){ const d=vivoActual(); if(d){ const ru=d.rutas[S.alt], t=ru.tramos[+tr.dataset.t]; fit(L.latLngBounds(puntos(ru).slice(t.a,t.b+1)),{maxZoom:16}); } }
@@ -726,6 +727,7 @@ $('#dlg-ok').onclick=async()=>{
   } else avisar('Tráfico en vivo desactivado (sin llave configurada o sin servidor). Se muestran los tiempos estimados fijos.', false);
 
   if(leyendaEl) leyendaEl.innerHTML=htmlLeyenda();
+  S.q=''; // al abrir la página nunca hay un filtro de texto puesto
   dibujarMapa(); ajustarVista(); render();
 })();
 })();
