@@ -249,7 +249,7 @@ const HOY = new Date().toISOString().slice(0,10);
 const MOVIL = ()=>window.matchMedia('(max-width:820px)').matches;
 
 const S = { suc:[], cd:null, rutas:new Map(), cierres:[], sel:null, zona:'Todas', estado:'Todos', q:'',
-  capas:{rutas:true,cierres:true,flujo:false,incidentes:false}, trafico:false, tab:'suc',
+  trafico:false, tab:'suc',
   vivo:new Map(), alt:0, vEstado:'off', inc:null, incT:0 };   // inc: null = sin cargar, 'fallo', o lista
 
 // ---------- utilidades ----------
@@ -274,7 +274,15 @@ function vigencia(c){
   const v = c.vigente_hasta < HOY;
   return {txt: (v?'Venció el ':'Vigente hasta el ')+c.vigente_hasta, vencido:v};
 }
-async function getJSON(u){ const r=await fetch(u); if(!r.ok) throw new Error(u+' '+r.status); return r.json(); }
+// Si el servidor responde con error, el mensaje de la función (p. ej. "TomTom respondió 403") llega en e.message
+async function getJSON(u, ms){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(), ms||15000);
+  try{
+    const r=await fetch(u,{signal:c.signal});
+    if(!r.ok){ let m=''; try{ m=(await r.json()).error||''; }catch{} const e=new Error(m||('error '+r.status)); e.status=r.status; throw e; }
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
 function hav(a,b){ const R=6371000,t=x=>x*Math.PI/180,dl=t(b[0]-a[0]),dn=t(b[1]-a[1]);
   const h=Math.sin(dl/2)**2+Math.cos(t(a[0]))*Math.cos(t(b[0]))*Math.sin(dn/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
 function largo(p){ let t=0; for(let i=1;i<p.length;i++) t+=hav(p[i-1],p[i]); return t; }
@@ -344,28 +352,11 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
   pane:'base', maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, tráfico &copy; TomTom'
 }).addTo(map);
 const gRutas=L.layerGroup().addTo(map), gSuc=L.layerGroup().addTo(map), gCie=L.layerGroup().addTo(map), gVivo=L.layerGroup().addTo(map);
-let capaFlujo=null, capaInc=null, errTeselas=0;
-
 function fit(bounds, opts){
   const o=Object.assign({maxZoom:15}, opts||{});
   if(MOVIL()){ const h=$('#side').offsetHeight; o.paddingTopLeft=[30,50]; o.paddingBottomRight=[30,h+24]; }
   else { o.paddingTopLeft=[$('#side').offsetWidth+44,50]; o.paddingBottomRight=[50,50]; }
   map.fitBounds(bounds,o);
-}
-function bucket(){ return Math.floor(Date.now()/300000); } // 5 min, igual para todos => cachea el CDN
-function crearCapaTrafico(nombre, opacidad){
-  const l = L.tileLayer(`/api/tiles/${nombre}/{z}/{x}/{y}?t=${bucket()}`,{opacity:opacidad,minZoom:6,maxZoom:19,maxNativeZoom:16,zIndex:300});
-  l.on('tileerror',()=>{ if(++errTeselas===8) avisar('El tráfico general no está disponible por ahora (límite diario o servicio caído). La ruta en vivo puede seguir funcionando.', false); });
-  return l;
-}
-function refrescarTrafico(){
-  errTeselas=0;
-  for(const [l,n] of [[capaFlujo,'flujo'],[capaInc,'incidentes']]) if(l) l.setUrl(`/api/tiles/${n}/{z}/{x}/{y}?t=${bucket()}`);
-}
-function aplicarCapaTrafico(){
-  if(!S.trafico) return;
-  if(S.capas.flujo){ capaFlujo = capaFlujo||crearCapaTrafico('flujo',.8); capaFlujo.addTo(map);} else if(capaFlujo) map.removeLayer(capaFlujo);
-  if(S.capas.incidentes){ capaInc = capaInc||crearCapaTrafico('incidentes',1); capaInc.addTo(map);} else if(capaInc) map.removeLayer(capaInc);
 }
 function avisar(txt, ok){ const a=$('#aviso'); a.textContent=txt; a.className=ok?'ok':''; a.style.display='block'; }
 function indicador(){
@@ -393,8 +384,6 @@ function visibles(){
   const q=norm(S.q);
   return S.suc.filter(s=>{
     if(S.zona!=='Todas' && s.zona!==S.zona) return false;
-    const r=S.rutas.get(s.codigo);
-    if(S.estado!=='Todos' && (!r || r.estado!==S.estado)) return false;
     if(q && !norm(`${s.sucursal} ${s.municipio} ${s.departamento} ${s.codigo} ${s.direccion}`).includes(q)) return false;
     return true;
   });
@@ -416,7 +405,7 @@ function dibujarMapa(){
     const r=S.rutas.get(s.codigo);
     const col = r?COLOR[r.estado]:'#8da2b0';
     const esSel = S.sel===s.codigo;
-    if(r && r.poly && S.capas.rutas){
+    if(r && r.poly){
       let est;
       if(esSel) est = conVivo ? {color:'#fff',weight:1.5,opacity:.5,dashArray:'2 7',lineCap:'round'} : {color:col,weight:5,opacity:.95};
       else est = {color:col,weight:S.sel?2:2.5,opacity:S.sel?.1:.42};
@@ -435,13 +424,11 @@ function dibujarMapa(){
   }
   if(S.sel && refs.lineas.has(S.sel)) refs.lineas.get(S.sel).bringToFront();
 
-  if(S.capas.cierres){
-    for(const c of S.cierres){
-      const v=vigencia(c), col=COLOR[c.estado]||COLOR.Afectada;
-      L.circle([c.lat,c.lon],{radius:c.radio_m,color:col,weight:2,fillColor:col,fillOpacity:v.vencido?.05:.2,dashArray:v.vencido?'6 6':null})
-        .bindPopup(popupCierre(c)).addTo(gCie);
-      L.circleMarker([c.lat,c.lon],{radius:5,color:'#0a1620',weight:1.5,fillColor:col,fillOpacity:1}).bindPopup(popupCierre(c)).addTo(gCie);
-    }
+  for(const c of S.cierres){
+    const v=vigencia(c), col=COLOR[c.estado]||COLOR.Afectada;
+    L.circle([c.lat,c.lon],{radius:c.radio_m,color:col,weight:2,fillColor:col,fillOpacity:v.vencido?.05:.2,dashArray:v.vencido?'6 6':null})
+      .bindPopup(popupCierre(c)).addTo(gCie);
+    L.circleMarker([c.lat,c.lon],{radius:5,color:'#0a1620',weight:1.5,fillColor:col,fillOpacity:1}).bindPopup(popupCierre(c)).addTo(gCie);
   }
   dibujarVivo();
 }
@@ -493,17 +480,10 @@ function render(){
 }
 function renderLista(){
   const zonas=['Todas',...new Set(S.suc.map(s=>s.zona))];
-  const estados=['Todos','Libre','Precaución','Afectada'];
   const vis=visibles();
-  const cap=(id,txt,dis)=>`<label class="tg ${dis?'off':''}"><input type="checkbox" data-capa="${id}" ${S.capas[id]?'checked':''} ${dis?'disabled':''}><span>${txt}</span></label>`;
   $('#cuerpo').innerHTML=`
     <input type="search" id="q" placeholder="Buscar sucursal, municipio o código" value="${esc(S.q)}" aria-label="Buscar sucursal">
     <div class="chips" aria-label="Zona">${zonas.map(z=>`<button class="chip" data-zona="${esc(z)}" aria-pressed="${S.zona===z}">${esc(z)}</button>`).join('')}</div>
-    <div class="chips" aria-label="Estado de ruta">${estados.map(e=>`<button class="chip" data-estado="${e}" aria-pressed="${S.estado===e}">${e}</button>`).join('')}</div>
-    <div class="capas" aria-label="Capas del mapa">
-      ${cap('rutas','Rutas')}${cap('cierres','Cierres')}
-      ${cap('flujo','Tráfico general',!S.trafico)}${cap('incidentes','Incidentes',!S.trafico)}
-    </div>
     <div class="cuenta">${vis.length} sucursal${vis.length===1?'':'es'}. Elige una para ver su ruta en vivo.</div>
     ${vis.length? vis.map(s=>{const r=S.rutas.get(s.codigo);return `
       <button class="item" data-cod="${esc(s.codigo)}">
@@ -536,7 +516,7 @@ function pintarVivo(){
     return;
   }
   if(!d){
-    const motivo = S.vEstado==='fallo' ? 'sin datos en vivo por ahora' : 'tráfico en vivo desactivado';
+    const motivo = S.vEstado==='fallo' ? `sin datos en vivo por ahora${S.vMotivo?` (${esc(S.vMotivo)})`:''}` : 'tráfico en vivo desactivado';
     box.innerHTML=`<div class="hero fijo"><div class="tiempo">${tiempoHTML(r.minutos)}</div><div class="hero-d"><b>Estimado fijo</b><span>${r.km} km, ${motivo}</span></div></div><p class="nota">${esc(pico)}</p>`;
     return;
   }
@@ -563,7 +543,9 @@ function pintarVivo(){
     incHTML = li.length
       ? `<ul class="tramos">${ver.map((i,k)=>`<li data-inc="${k}"><span class="bar" style="background:${incCol(i.cat)}"></span><span><b>${esc(incTitulo(i))}</b>
           <span class="sub">${i.de?esc(i.de)+(i.a&&i.a!==i.de?' a '+esc(i.a):''):'Sin nombre de calle'}${i.vias.length?` (${esc(i.vias.join(', '))})`:''}${i.ret_min>0?`, suma ${i.ret_min} min`:''}${cuando(i)?`<br>${esc(cuando(i))}`:''}</span></span></li>`).join('')}</ul>${li.length>ver.length?`<p class="sub">y ${li.length-ver.length} más cerca de la ruta.</p>`:''}`
-      : `<p class="okline">TomTom no reporta accidentes ni cierres cerca de esta ruta ahora.</p>`;
+      : S.inc.length===0
+        ? `<p class="okline">TomTom no reporta incidentes cerca de esta ruta.</p><p class="sub">Tampoco reporta ninguno en el resto de la red ahora. Si esto se repite a distintas horas, su cobertura de incidentes en El Salvador es limitada: para cierres usa la pestaña Cierres.</p>`
+        : `<p class="okline">TomTom no reporta accidentes ni cierres cerca de esta ruta ahora.</p>`;
     if(S.incPar) incHTML+=`<p class="sub">Una parte del mapa no respondió: la lista puede estar incompleta.</p>`;
   }
   const h=new Date(d.actualizado);
@@ -613,7 +595,8 @@ async function cargarRuta(cod, silencioso){
   if(hit && Date.now()-hit.t<300000){ if(silencioso) return; S.vEstado='ok'; S.alt=0; dibujarMapa(); pintarVivo(); enfocarVivo(); return; }
   if(!silencioso){ S.vEstado='carga'; pintarVivo(); }
   let d=null;
-  try{ d=await getJSON('/api/ruta?codigo='+encodeURIComponent(cod)); if(!d.rutas||!d.rutas.length) throw 0; S.vivo.set(cod,{t:Date.now(),d}); }catch{ d=null; }
+  try{ d=await getJSON('/api/ruta?codigo='+encodeURIComponent(cod)); if(!d.rutas||!d.rutas.length) throw new Error('respuesta sin ruta'); S.vivo.set(cod,{t:Date.now(),d}); }
+  catch(e){ d=null; S.vMotivo = e.name==='AbortError' ? 'tardó demasiado en responder' : (e.message||'error'); }
   if(S.sel!==cod) return;
   if(!d){ if(!vivoActual()){ S.vEstado='fallo'; pintarVivo(); dibujarMapa(); } return; }
   const habia=!!hit; S.vEstado='ok'; S.alt=Math.min(S.alt,d.rutas.length-1);
@@ -647,10 +630,9 @@ $('#tab-cie').onclick=()=>{S.tab='cie';S.sel=null;dibujarMapa();render();};
 $('#asa').onclick=()=>$('#side').classList.toggle('abajo');
 $('#cuerpo').addEventListener('click',e=>{
   if(e.target.closest('#btn-actualizar')) return abrirDlg();
-  const z=e.target.closest('[data-zona]'), es=e.target.closest('[data-estado]'), it=e.target.closest('[data-cod]'), ci=e.target.closest('[data-cie]'),
+  const z=e.target.closest('[data-zona]'), it=e.target.closest('[data-cod]'), ci=e.target.closest('[data-cie]'),
         al=e.target.closest('[data-alt]'), tr=e.target.closest('[data-t]'), ic=e.target.closest('[data-inc]');
   if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
-  else if(es){S.estado=es.dataset.estado;dibujarMapa();ajustarVista();render();}
   else if(it) seleccionar(it.dataset.cod);
   else if(al) elegirAlt(+al.dataset.alt);
   else if(tr){ const d=vivoActual(); if(d){ const ru=d.rutas[S.alt], t=ru.tramos[+tr.dataset.t]; fit(L.latLngBounds(puntos(ru).slice(t.a,t.b+1)),{maxZoom:16}); } }
@@ -665,11 +647,6 @@ function resaltar(cod,on){
 }
 $('#cuerpo').addEventListener('mouseover',e=>{ const it=e.target.closest('[data-cod]'); if(it) resaltar(it.dataset.cod,true); });
 $('#cuerpo').addEventListener('mouseout',e=>{ const it=e.target.closest('[data-cod]'); if(it) resaltar(it.dataset.cod,false); });
-$('#cuerpo').addEventListener('change',e=>{
-  const id=e.target.dataset.capa; if(!id) return;
-  S.capas[id]=e.target.checked;
-  if(id==='flujo'||id==='incidentes') aplicarCapaTrafico(); else dibujarMapa();
-});
 
 // ---------- datos ----------
 async function cargarDatos(){
@@ -743,10 +720,9 @@ $('#dlg-ok').onclick=async()=>{
   try{ const st=await getJSON('/api/estado'); S.trafico=!!st.trafico; }catch{ S.trafico=false; }
   indicador();
   if(S.trafico){
-    aplicarCapaTrafico();
-    // cada 5 min: si hay una sucursal abierta se recalcula su ruta; las capas de tráfico se refrescan si están activas
+    // cada 5 min: se actualizan los incidentes y, si hay una sucursal abierta, se recalcula su ruta
     cargarIncidentes();
-    setInterval(()=>{ if(document.hidden) return; refrescarTrafico(); cargarIncidentes(); if(S.sel) cargarRuta(S.sel,true); },300000);
+    setInterval(()=>{ if(document.hidden) return; cargarIncidentes(); if(S.sel) cargarRuta(S.sel,true); },300000);
   } else avisar('Tráfico en vivo desactivado (sin llave configurada o sin servidor). Se muestran los tiempos estimados fijos.', false);
 
   if(leyendaEl) leyendaEl.innerHTML=htmlLeyenda();
