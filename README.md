@@ -1,6 +1,14 @@
 # Mapa de la Red de Sucursales Vidrí
 
-Página web con mapa interactivo (Leaflet + OpenStreetMap), rutas desde CD Nejapa con indicaciones paso a paso, cierres viales con fecha de vigencia y **tráfico en vivo de TomTom**. Si no hay llave de TomTom, la página funciona igual con los tiempos estimados fijos y avisa que el tráfico en vivo está apagado.
+Página web con mapa nocturno (Leaflet + OpenStreetMap) que, al elegir una sucursal, dibuja la **mejor ruta en vivo de TomTom** desde CD Nejapa: coloreada tramo por tramo según el tráfico real (fluido, leve, moderado, fuerte, cierre), con rutas alternativas, tiempo estimado para camión y aviso si TomTom se desvía de la ruta habitual. Además muestra cierres viales con fecha de vigencia y las indicaciones de la ruta habitual. Si no hay llave de TomTom, la página funciona igual con los tiempos estimados fijos y avisa que el tráfico en vivo está apagado.
+
+## Cómo funciona la vista en vivo
+
+- Al abrir la página, todas las rutas habituales se ven tenues, coloreadas por estado de cierres (Libre, Precaución, Afectada).
+- Al elegir una sucursal, la página pide `/api/ruta?codigo=XX`: una sola consulta a TomTom que devuelve la ruta más rápida, hasta 2 alternativas y los tramos con demora de cada una. La ruta elegida se ilumina, con puntos que avanzan hacia la sucursal (solo indican el sentido, no son un camión real).
+- Los tramos sin color de demora no significan "vía libre garantizada": significan que TomTom no reporta demoras ahí en este momento.
+- Las capas **Tráfico general** e **Incidentes** (teselas de TomTom sobre todo el mapa) vienen apagadas para gastar menos cuota; se activan con los interruptores del panel.
+- El mapa base es OpenStreetMap con un filtro de color oscuro aplicado en el navegador; no hay otro proveedor de mapas.
 
 ## Estructura
 
@@ -9,8 +17,9 @@ public/index.html            la página (todo el código del mapa)
 public/data/sucursales.json  sucursales y CD
 public/data/rutas.json       rutas (polilínea, pasos, tiempos fijos)
 public/data/cierres.json     cierres viales (se edita a mano)
-netlify/functions/           tiles, eta, estado, cierres (lee) y subir (recibe el reporte)
+netlify/functions/           ruta (mejor ruta en vivo), tiles, eta, estado, cierres (lee) y subir (recibe el reporte)
 netlify/lib/tope.mjs         contador diario y lectura de la llave
+netlify/lib/polilinea.mjs    codifica la geometría de la ruta para enviarla ligera
 netlify.toml                 configuración de Netlify (reemplaza la de Astro)
 tests/test.mjs               pruebas con TomTom simulado
 ```
@@ -60,7 +69,7 @@ Netlify → **Site configuration → General → Site details → Change site na
 ## Paso 5 — Probar en tu computadora
 
 ```bash
-npm test                         # 15 pruebas de las funciones (TomTom simulado)
+npm test                         # pruebas de las funciones y del botón de cierres (TomTom simulado)
 cp .env.example .env             # pon tu llave en .env (no se sube a GitHub)
 npx netlify dev                  # abre http://localhost:8888
 ```
@@ -73,11 +82,13 @@ Edita `public/data/cierres.json`. Cada cierre tiene: `id`, `nombre`, `estado` (L
 
 ## Límites que conviene conocer
 
-- **Caché:** las teselas se cachean 5 min y el tiempo en vivo 10 min en el CDN de Netlify, así que muchos visitantes generan pocas llamadas a TomTom.
-- **Tope diario:** `TOPE_TESELAS_DIA` (1800) y `TOPE_ETA_DIA` (400) son de *mejor esfuerzo*: cada instancia serverless cuenta por separado, no es un tope exacto. El límite real es el gratuito de TomTom (revisa el vigente en developer.tomtom.com/pricing); al excederse responde 403 y la página vuelve a los tiempos fijos.
+- **Caché:** las teselas y la ruta en vivo se cachean 5 min en el CDN de Netlify, así que muchos visitantes que miran la misma sucursal generan una sola llamada a TomTom.
+- **Tope diario:** `TOPE_RUTA_DIA` (300), `TOPE_TESELAS_DIA` (1800) y `TOPE_ETA_DIA` (400) son de *mejor esfuerzo*: cada instancia serverless cuenta por separado, no es un tope exacto. El límite real es el gratuito de TomTom (revisa el vigente en developer.tomtom.com/pricing); al excederse responde 403 y la página vuelve a los tiempos fijos.
+- **Alternativas:** `ALTERNATIVAS_RUTA` (0 a 3, por defecto 2) controla cuántas rutas alternativas se piden. Si TomTom no las acepta junto con el modo camión, se reintenta sin alternativas antes de caer a modo carro.
 - **Netlify gratis:** puede usar créditos mensuales compartidos entre tus sitios; cada despliegue y el ancho de banda consumen. Revisa tu uso en Netlify → Billing.
 - **Mapa base:** los mosaicos públicos de OpenStreetMap son para uso ligero; si el sitio crece, cambia a un proveedor de mosaicos.
-- **Tiempo en vivo ≠ ruta dibujada:** TomTom calcula su propia ruta más rápida; puede diferir de la ruta guardada en `rutas.json`.
+- **Ruta en vivo ≠ ruta habitual:** TomTom calcula su propia ruta más rápida; puede diferir de la guardada en `rutas.json`. La página lo mide (porcentaje de coincidencia) y dibuja la habitual punteada cuando se desvían.
+- **Semáforos:** TomTom no los modela; por eso se suma el margen de abajo.
 
 ## Subir el reporte de cierres (botón "Actualizar cierres")
 
