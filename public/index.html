@@ -166,6 +166,7 @@ ol.pasos .al{color:var(--afect);font-size:12.5px}
 .leyenda .lg-suc{width:11px;height:11px;border-radius:50%;background:#8da2b0;border:2px solid #0a1620;box-shadow:0 0 0 1px #8da2b0;margin:0 8px 0 5px}
 .leyenda .lg-cie{width:18px;height:18px;border-radius:50%;border:2px solid var(--afect);background:rgba(255,90,110,.22);margin-right:5px}
 .leyenda .lg-venc{border-style:dashed;opacity:.65}
+.leyenda .lg-inc{width:11px;height:11px;border-radius:50%;border:2px solid #fff;margin:0 8px 0 6px;box-sizing:content-box}
 .leyenda .lg-traf{width:100%;height:6px;border-radius:3px;margin:3px 0 0;background:linear-gradient(90deg,var(--fluido),var(--leve),var(--mod),var(--fuerte),var(--cierre))}
 .leyenda .esc{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;line-height:1.2}
 
@@ -235,6 +236,12 @@ const MAG = ['#f6c445','#f6c445','#ff9340','#ff5a4f','#e8408f'];            // 0
 const MAG_TXT = ['sin clasificar','leve','moderado','fuerte','cierre o demora indefinida'];
 const CAT_TXT = {JAM:'Tráfico lento',ROAD_WORK:'Obras',ROAD_CLOSURE:'Cierre de vía',OTHER:'Incidente'};
 const FLUIDO = '#3fd6c0';
+// incidentes reportados por TomTom (iconCategory)
+const INC_TXT = {0:'Incidente',1:'Accidente',2:'Niebla',3:'Condiciones peligrosas',4:'Lluvia',5:'Hielo',6:'Tráfico lento',7:'Carril cerrado',8:'Vía cerrada',9:'Obras',10:'Viento fuerte',11:'Inundación',14:'Vehículo averiado'};
+const INC_COL = {1:'#ff5a4f',7:'#e8408f',8:'#e8408f',9:'#f6c445',6:'#ff9340',14:'#ff9340',2:'#6cb2ff',3:'#6cb2ff',4:'#6cb2ff',5:'#6cb2ff',10:'#6cb2ff',11:'#6cb2ff',0:'#9fb4c2'};
+const INC_ORDEN = {8:0,7:1,1:2,11:3,3:4,9:5,14:6,6:7}; // lo más grave primero
+const incCol = (c)=> INC_COL[c] || INC_COL[0];
+const incTxt = (c)=> INC_TXT[c] || INC_TXT[0];
 const $ = (s)=>document.querySelector(s);
 const esc = (t)=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm = (t)=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
@@ -243,7 +250,7 @@ const MOVIL = ()=>window.matchMedia('(max-width:820px)').matches;
 
 const S = { suc:[], cd:null, rutas:new Map(), cierres:[], sel:null, zona:'Todas', estado:'Todos', q:'',
   capas:{rutas:true,cierres:true,flujo:false,incidentes:false}, trafico:false, tab:'suc',
-  vivo:new Map(), alt:0, vEstado:'off' };
+  vivo:new Map(), alt:0, vEstado:'off', inc:null, incT:0 };   // inc: null = sin cargar, 'fallo', o lista
 
 // ---------- utilidades ----------
 function decodePoly(str){
@@ -287,6 +294,41 @@ function coincide(A, R){
     if(best<=150) ok++;
   }
   return Math.round(100*ok/n);
+}
+// Incidentes de TomTom que quedan a menos de 200 m de la ruta elegida
+function metrosRuta(ru){
+  if(ru._m) return ru._m;
+  const p=puntos(ru), lat0=p[0][0], kx=111320*Math.cos(lat0*Math.PI/180), ky=110540;
+  return ru._m={kx,ky,R:p.map(q=>[q[1]*kx,q[0]*ky])};
+}
+function distARuta(pt, m){
+  const px=pt[1]*m.kx, py=pt[0]*m.ky, R=m.R; let best=1e9;
+  for(let j=0;j<R.length-1;j++){
+    const ax=R[j][0],ay=R[j][1],dx=R[j+1][0]-ax,dy=R[j+1][1]-ay;
+    const x1=Math.min(ax,R[j+1][0]), x2=Math.max(ax,R[j+1][0]);
+    if(px<x1-2500||px>x2+2500) continue;      // lejos: no hace falta calcular
+    const l=dx*dx+dy*dy; let t=l?((px-ax)*dx+(py-ay)*dy)/l:0; t=Math.max(0,Math.min(1,t));
+    const d=Math.hypot(ax+t*dx-px,ay+t*dy-py); if(d<best) best=d;
+  }
+  return best;
+}
+function incidentesDeRuta(ru){
+  if(!Array.isArray(S.inc)) return [];
+  if(ru._inc && ru._incT===S.incT) return ru._inc;
+  const m=metrosRuta(ru);
+  const l=S.inc.filter(i=>i.geo.some(g=>distARuta(g,m)<=200))
+    .sort((a,b)=>(INC_ORDEN[a.cat]??9)-(INC_ORDEN[b.cat]??9)||b.mag-a.mag);
+  ru._incT=S.incT; return ru._inc=l;
+}
+// TomTom suele repetir la categoría en la descripción ("Accidente. Carril bloqueado"): no se muestra dos veces
+function incTitulo(i){
+  const lab=incTxt(i.cat), d=(i.desc||'').trim();
+  if(!d||norm(d)===norm(lab)) return lab;
+  return norm(d).startsWith(norm(lab)) ? d : `${lab}: ${d}`;
+}
+function cuando(i){
+  const f=(s)=>new Date(s).toLocaleString('es-SV',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
+  const a=[]; if(i.desde) a.push('desde '+f(i.desde)); if(i.hasta) a.push('hasta '+f(i.hasta)); return a.join(' ');
 }
 function tiempoHTML(m){
   return m>=60 ? `<span class="num">${Math.floor(m/60)}</span><span class="uni">h</span><span class="num">${String(m%60).padStart(2,'0')}</span><span class="uni">min</span>`
@@ -335,7 +377,8 @@ let leyendaEl=null;
 function htmlLeyenda(){
   return `<summary>Leyenda</summary><div class="lg-b">
   <div><i class="l" style="background:${COLOR.Libre}"></i>Ruta sin cierres</div><div><i class="l" style="background:${COLOR['Precaución']}"></i>Ruta con precaución</div><div><i class="l" style="background:${COLOR.Afectada}"></i>Ruta afectada</div><hr>
-  ${S.trafico?`<div>Tráfico en la ruta elegida</div><div class="lg lg-traf"></div><div class="esc"><span>fluido</span><span>leve</span><span>moderado</span><span>fuerte</span><span>cierre</span></div><div><i class="l" style="background:none;border-top:2px dotted #fff;height:0;opacity:.6"></i>Ruta habitual (si TomTom se desvía)</div><hr>`:''}
+  ${S.trafico?`<div>Tráfico en la ruta elegida</div><div class="lg lg-traf"></div><div class="esc"><span>fluido</span><span>leve</span><span>moderado</span><span>fuerte</span><span>cierre</span></div><div><i class="l" style="background:none;border-top:2px dotted #fff;height:0;opacity:.6"></i>Ruta habitual (si TomTom se desvía)</div>
+  <div><span class="lg lg-inc" style="background:#ff5a4f"></span>Accidente</div><div><span class="lg lg-inc" style="background:#e8408f"></span>Vía o carril cerrado</div><div><span class="lg lg-inc" style="background:#f6c445"></span>Obras</div><div><span class="lg lg-inc" style="background:#6cb2ff"></span>Clima o inundación</div><hr>`:''}
   <div><span class="lg lg-cd"></span>CD Nejapa (salida)</div>
   <div><span class="lg lg-suc"></span>Sucursal</div>
   <div><span class="lg lg-cie"></span>Zona de cierre vial</div>
@@ -424,6 +467,12 @@ function dibujarVivo(){
       .bindTooltip(`${CAT_TXT[t.cat]||'Incidente'}, ${MAG_TXT[t.mag]}${t.vel!=null?` · ${t.vel} km/h`:''}${t.ret>0?` · +${t.ret} min`:''}`,{sticky:true}).addTo(gVivo);
   }
   L.polyline(p,Object.assign({color:'#fff',weight:2,opacity:.85,dashArray:'1 12',className:'fluye'},op)).addTo(gVivo);
+  incidentesDeRuta(ru).forEach((i,k)=>{
+    const g=i.geo[Math.floor(i.geo.length/2)];
+    L.circleMarker(g,{pane:'vivo',radius:8,color:'#fff',weight:2,fillColor:incCol(i.cat),fillOpacity:1})
+      .on('click',()=>{ const el=document.querySelector(`[data-inc="${k}"]`); if(el) el.scrollIntoView({block:'nearest'}); })
+      .bindTooltip(`${esc(incTitulo(i))}${i.de?`<br>${esc(i.de)}`:''}`,{direction:'top',offset:[0,-6]}).addTo(gVivo);
+  });
 }
 function popupCierre(c){
   const v=vigencia(c);
@@ -506,6 +555,17 @@ function pintarVivo(){
         const km=largo(p.slice(t.a,t.b+1))/1000, col=t.cat==='ROAD_CLOSURE'||t.mag===4?MAG[4]:MAG[t.mag];
         return `<li data-t="${i}"><span class="bar" style="background:${col}"></span><span><b>${esc(CAT_TXT[t.cat]||'Incidente')}, ${esc(MAG_TXT[t.mag])}</b><span class="sub">${km.toFixed(1)} km${t.vel!=null?` a ${t.vel} km/h`:''}${t.ret>0?`, suma ${t.ret} min`:''}</span></span></li>`;}).join('')}</ul>`
     : `<p class="okline">TomTom no reporta demoras en esta ruta ahora.</p><p class="sub">Que no haya reportes no garantiza vía libre: es lo que TomTom detecta en este momento.</p>`;
+  let incHTML;
+  if(S.inc===null) incHTML=`<p class="sub">Consultando incidentes…</p>`;
+  else if(S.inc==='fallo') incHTML=`<p class="sub">No se pudo consultar la lista de incidentes en este momento.</p>`;
+  else {
+    const li=incidentesDeRuta(ru), ver=li.slice(0,8);
+    incHTML = li.length
+      ? `<ul class="tramos">${ver.map((i,k)=>`<li data-inc="${k}"><span class="bar" style="background:${incCol(i.cat)}"></span><span><b>${esc(incTitulo(i))}</b>
+          <span class="sub">${i.de?esc(i.de)+(i.a&&i.a!==i.de?' a '+esc(i.a):''):'Sin nombre de calle'}${i.vias.length?` (${esc(i.vias.join(', '))})`:''}${i.ret_min>0?`, suma ${i.ret_min} min`:''}${cuando(i)?`<br>${esc(cuando(i))}`:''}</span></span></li>`).join('')}</ul>${li.length>ver.length?`<p class="sub">y ${li.length-ver.length} más cerca de la ruta.</p>`:''}`
+      : `<p class="okline">TomTom no reporta accidentes ni cierres cerca de esta ruta ahora.</p>`;
+    if(S.incPar) incHTML+=`<p class="sub">Una parte del mapa no respondió: la lista puede estar incompleta.</p>`;
+  }
   const h=new Date(d.actualizado);
   box.innerHTML=`
     <div class="hero ${clase}">
@@ -515,6 +575,7 @@ function pintarVivo(){
     <p class="nota">Estimado, no exacto. TomTom (${d.modo==='camion'?'camión':'carro'}) calcula ${fmtMin(ru.min_vivo)} con el tráfico de ahora${d.margen_pct>0?` y se suma ${d.margen_pct} % por semáforos, paradas y maniobras, que TomTom no mide`:''} (consultado a las ${hora(h)}).${d.modo==='carro'?' TomTom no tuvo perfil de camión para esta ruta: se calculó como carro.':''}</p>
     ${coin}${ops}
     <div class="sec"><h3>Tráfico en la ruta</h3>${tr}</div>
+    <div class="sec"><h3>Accidentes, cierres y obras cerca</h3>${incHTML}</div>
     <p class="nota">${esc(pico)}</p>`;
 }
 function renderDetalle(){
@@ -558,6 +619,14 @@ async function cargarRuta(cod, silencioso){
   const habia=!!hit; S.vEstado='ok'; S.alt=Math.min(S.alt,d.rutas.length-1);
   dibujarMapa(); pintarVivo(); if(!habia) enfocarVivo();
 }
+async function cargarIncidentes(){
+  try{
+    const d=await getJSON('/api/incidentes');
+    if(!Array.isArray(d.incidentes)) throw 0;
+    S.inc=d.incidentes; S.incPar=!!d.parcial; S.incT=Date.now();
+  }catch{ if(!Array.isArray(S.inc)) S.inc='fallo'; }   // si ya había una lista, se conserva la anterior
+  if(S.sel && vivoActual()){ dibujarVivo(); pintarVivo(); }
+}
 function enfocarVivo(){ const d=vivoActual(); if(d) fit(L.latLngBounds(puntos(d.rutas[S.alt])),{maxZoom:15}); }
 function elegirAlt(i){ S.alt=i; dibujarVivo(); pintarVivo(); enfocarVivo(); }
 
@@ -579,12 +648,13 @@ $('#asa').onclick=()=>$('#side').classList.toggle('abajo');
 $('#cuerpo').addEventListener('click',e=>{
   if(e.target.closest('#btn-actualizar')) return abrirDlg();
   const z=e.target.closest('[data-zona]'), es=e.target.closest('[data-estado]'), it=e.target.closest('[data-cod]'), ci=e.target.closest('[data-cie]'),
-        al=e.target.closest('[data-alt]'), tr=e.target.closest('[data-t]');
+        al=e.target.closest('[data-alt]'), tr=e.target.closest('[data-t]'), ic=e.target.closest('[data-inc]');
   if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
   else if(es){S.estado=es.dataset.estado;dibujarMapa();ajustarVista();render();}
   else if(it) seleccionar(it.dataset.cod);
   else if(al) elegirAlt(+al.dataset.alt);
   else if(tr){ const d=vivoActual(); if(d){ const ru=d.rutas[S.alt], t=ru.tramos[+tr.dataset.t]; fit(L.latLngBounds(puntos(ru).slice(t.a,t.b+1)),{maxZoom:16}); } }
+  else if(ic){ const d=vivoActual(); if(d){ const i=incidentesDeRuta(d.rutas[S.alt])[+ic.dataset.inc]; if(i) fit(L.latLngBounds(i.geo),{maxZoom:16}); } }
   else if(ci){const c=S.cierres.find(x=>x.id===ci.dataset.cie);map.flyTo([c.lat,c.lon],15,{duration:.8});
     L.popup().setLatLng([c.lat,c.lon]).setContent(popupCierre(c)).openOn(map);}
 });
@@ -675,7 +745,8 @@ $('#dlg-ok').onclick=async()=>{
   if(S.trafico){
     aplicarCapaTrafico();
     // cada 5 min: si hay una sucursal abierta se recalcula su ruta; las capas de tráfico se refrescan si están activas
-    setInterval(()=>{ if(document.hidden) return; refrescarTrafico(); if(S.sel) cargarRuta(S.sel,true); },300000);
+    cargarIncidentes();
+    setInterval(()=>{ if(document.hidden) return; refrescarTrafico(); cargarIncidentes(); if(S.sel) cargarRuta(S.sel,true); },300000);
   } else avisar('Tráfico en vivo desactivado (sin llave configurada o sin servidor). Se muestran los tiempos estimados fijos.', false);
 
   if(leyendaEl) leyendaEl.innerHTML=htmlLeyenda();

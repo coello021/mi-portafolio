@@ -6,6 +6,21 @@ const trozo = (n) => {
   return s + String.fromCharCode(v + 63);
 };
 
+export function decodificar(str) {
+  let i = 0, lat = 0, lon = 0;
+  const out = [];
+  while (i < str.length) {
+    for (let k = 0; k < 2; k++) {
+      let b, sh = 0, r = 0;
+      do { b = str.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32 && i <= str.length);
+      const d = r & 1 ? ~(r >> 1) : r >> 1;
+      if (k === 0) lat += d; else lon += d;
+    }
+    out.push([lat / 1e5, lon / 1e5]);
+  }
+  return out;
+}
+
 export function codificar(puntos) {
   let lat = 0, lon = 0, out = '';
   for (const [la, lo] of puntos) {

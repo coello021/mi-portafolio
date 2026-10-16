@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = mkdtempSync(join(tmpdir(), 'fn-'));
-for (const f of ['estado', 'tiles', 'eta', 'ruta']) {
+for (const f of ['estado', 'tiles', 'eta', 'ruta', 'incidentes']) {
   execSync(`npx --yes esbuild netlify/functions/${f}.mjs --bundle --format=esm --platform=node --outfile=${out}/${f}.mjs --log-level=error`, { cwd: raiz, stdio: 'inherit' });
 }
 const cargar = async (f) => (await import(pathToFileURL(join(out, f + '.mjs')).href));
@@ -17,6 +17,7 @@ const estado = (await cargar('estado')).default;
 const tiles = await cargar('tiles');
 const eta = await cargar('eta');
 const ruta = await cargar('ruta');
+const inc = await cargar('incidentes');
 
 const llamadas = [];
 globalThis.fetch = async (url) => {
@@ -134,6 +135,45 @@ const rutaTT = (seg, km, extra = {}) => ({
   assert.equal((await ruta.default(new Request('http://x/api/ruta?codigo=15'))).status, 429); delete process.env.TOPE_RUTA_DIA; ok('ruta: tope diario => 429');
   const k0 = process.env.TOMTOM_API_KEY; delete process.env.TOMTOM_API_KEY;
   assert.equal((await ruta.default(new Request('http://x/api/ruta?codigo=15'))).status, 503); process.env.TOMTOM_API_KEY = k0; ok('ruta: sin llave => 503');
+}
+
+// ---- /api/incidentes: accidentes, cierres y obras reportados por TomTom ----
+{
+  const f0 = globalThis.fetch; const urls = [];
+  const feat = (id, cat, geom, extra = {}) => ({ type: 'Feature', geometry: geom, properties: { id, iconCategory: cat, magnitudeOfDelay: 3, events: [{ description: 'Accidente', code: 201 }, { description: 'Carril bloqueado' }], startTime: '2026-10-16T13:00:00Z', endTime: null, from: 'Bulevar Constitución', to: 'Carretera a Quezaltepeque', length: 350.4, delay: 270, roadNumbers: ['CA-4'], ...extra } });
+  globalThis.fetch = async (u) => { urls.push(String(u)); return new Response(JSON.stringify({ incidents: [
+    feat('a1', 1, { type: 'Point', coordinates: [-89.2301, 13.8021] }),
+    feat('c1', 8, { type: 'LineString', coordinates: Array.from({ length: 100 }, (_, i) => [-89.2 - i * 0.0005, 13.78]) }, { delay: null, events: [{ description: 'Cerrado' }] }),
+    { type: 'Feature', geometry: { type: 'Point', coordinates: [] }, properties: { id: 'malo', iconCategory: 1 } },
+  ] }), { status: 200 }); };
+
+  r = await inc.default(new Request('http://x/api/incidentes'));
+  const x = await r.json();
+  assert.equal(r.status, 200); assert.ok(urls.length >= 2, 'la red mide más de 10,000 km²: debe dividirse en franjas'); ok(`incidentes: la red se divide en ${urls.length} franjas (TomTom permite 10,000 km² por consulta)`);
+  for (const u of urls) {
+    assert.match(u, /traffic\/services\/5\/incidentDetails\?key=LLAVE_DE_PRUEBA/); assert.match(u, /timeValidityFilter=present/); assert.match(u, /language=es-ES/);
+    const b = new URL(u).searchParams.get('bbox').split(',').map(Number);
+    const km2 = (b[3] - b[1]) * 110.54 * (b[2] - b[0]) * 111.32 * Math.cos(((b[1] + b[3]) / 2) * Math.PI / 180);
+    assert.ok(km2 < 10000, `franja de ${Math.round(km2)} km²`);
+  }
+  ok('incidentes: URL correcta y cada franja queda bajo 10,000 km²');
+  assert.equal(x.incidentes.length, 2); assert.equal(x.parcial, false); // el repetido entre franjas y el de geometría vacía no cuentan
+  const a = x.incidentes.find((i) => i.id === 'a1');
+  assert.equal(a.cat, 1); assert.equal(a.desc, 'Accidente. Carril bloqueado'); assert.equal(a.de, 'Bulevar Constitución'); assert.equal(a.ret_min, 4.5); assert.deepEqual(a.vias, ['CA-4']); assert.deepEqual(a.geo, [[13.8021, -89.2301]]);
+  assert.equal(x.incidentes.find((i) => i.id === 'c1').geo.length, 30); assert.equal(x.incidentes.find((i) => i.id === 'c1').ret_min, 0);
+  ok('incidentes: normaliza, quita repetidos y geometrías vacías, y reduce líneas largas');
+  assert.ok(!JSON.stringify(x).includes('LLAVE_DE_PRUEBA')); assert.match(r.headers.get('netlify-cdn-cache-control'), /s-maxage=300/); ok('incidentes: no filtra la llave y se cachea 5 min');
+  let n = 0; globalThis.fetch = async () => (n++ === 0 ? new Response(JSON.stringify({ incidents: [feat('z', 1, { type: 'Point', coordinates: [-89.2, 13.7] })] }), { status: 200 }) : new Response('x', { status: 500 }));
+  const p = await (await inc.default(new Request('http://x/api/incidentes'))).json();
+  assert.equal(p.parcial, true); assert.equal(p.incidentes.length, 1); ok('incidentes: si una franja falla, devuelve las demás y avisa que es parcial');
+  globalThis.fetch = async () => new Response('x', { status: 403 });
+  r = await inc.default(new Request('http://x/api/incidentes')); assert.equal(r.status, 429); assert.ok(!(await r.text()).includes('LLAVE_DE_PRUEBA')); ok('incidentes: 403 => 429 sin filtrar la llave');
+  globalThis.fetch = async () => new Response('x', { status: 400 });
+  r = await inc.default(new Request('http://x/api/incidentes')); assert.equal(r.status, 502); ok('incidentes: si TomTom rechaza la consulta (p. ej. el plan no la incluye) => 502 con el código');
+  globalThis.fetch = f0;
+  process.env.TOPE_INC_DIA = '1'; assert.equal((await inc.default(new Request('http://x/api/incidentes'))).status, 429); delete process.env.TOPE_INC_DIA; ok('incidentes: tope diario => 429');
+  const k0 = process.env.TOMTOM_API_KEY; delete process.env.TOMTOM_API_KEY;
+  assert.equal((await inc.default(new Request('http://x/api/incidentes'))).status, 503); process.env.TOMTOM_API_KEY = k0; ok('incidentes: sin llave => 503');
 }
 
 // error de TomTom: no debe filtrar la llave

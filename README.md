@@ -6,6 +6,7 @@ Página web con mapa nocturno (Leaflet + OpenStreetMap) que, al elegir una sucur
 
 - Al abrir la página, todas las rutas habituales se ven tenues, coloreadas por estado de cierres (Libre, Precaución, Afectada).
 - Al elegir una sucursal, la página pide `/api/ruta?codigo=XX`: una sola consulta a TomTom que devuelve la ruta más rápida, hasta 2 alternativas y los tramos con demora de cada una. La ruta elegida se ilumina, con puntos que avanzan hacia la sucursal (solo indican el sentido, no son un camión real).
+- **Accidentes, cierres y obras:** la página consulta `/api/incidentes` (API de incidentes de TomTom, la misma llave) y muestra, con texto, calle y horas, los que quedan a menos de 200 m de la ruta elegida, además de un punto de color en el mapa. La red mide más de 10,000 km², el máximo por consulta de TomTom, así que la función la divide en franjas; el resultado es igual para todos y se cachea 5 min. Si TomTom no incluye esta consulta en tu plan, o no responde, la página lo dice y el resto sigue funcionando. No se sabe de antemano qué tan completa es la cobertura en El Salvador: hay que comprobarla en la práctica.
 - Los tramos sin color de demora no significan "vía libre garantizada": significan que TomTom no reporta demoras ahí en este momento.
 - Las capas **Tráfico general** e **Incidentes** (teselas de TomTom sobre todo el mapa) vienen apagadas para gastar menos cuota; se activan con los interruptores del panel.
 - El mapa base es OpenStreetMap con un filtro de color oscuro aplicado en el navegador; no hay otro proveedor de mapas.
@@ -17,7 +18,7 @@ public/index.html            la página (todo el código del mapa)
 public/data/sucursales.json  sucursales y CD
 public/data/rutas.json       rutas (polilínea, pasos, tiempos fijos)
 public/data/cierres.json     cierres viales (se edita a mano)
-netlify/functions/           ruta (mejor ruta en vivo), tiles, eta, estado, cierres (lee) y subir (recibe el reporte)
+netlify/functions/           ruta (mejor ruta en vivo), incidentes, tiles, eta, estado, cierres (lee) y subir (recibe el reporte)
 netlify/lib/tope.mjs         contador diario y lectura de la llave
 netlify/lib/polilinea.mjs    codifica la geometría de la ruta para enviarla ligera
 netlify.toml                 configuración de Netlify (reemplaza la de Astro)
@@ -83,7 +84,7 @@ Edita `public/data/cierres.json`. Cada cierre tiene: `id`, `nombre`, `estado` (L
 ## Límites que conviene conocer
 
 - **Caché:** las teselas y la ruta en vivo se cachean 5 min en el CDN de Netlify, así que muchos visitantes que miran la misma sucursal generan una sola llamada a TomTom.
-- **Tope diario:** `TOPE_RUTA_DIA` (300), `TOPE_TESELAS_DIA` (1800) y `TOPE_ETA_DIA` (400) son de *mejor esfuerzo*: cada instancia serverless cuenta por separado, no es un tope exacto. El límite real es el gratuito de TomTom (revisa el vigente en developer.tomtom.com/pricing); al excederse responde 403 y la página vuelve a los tiempos fijos.
+- **Tope diario:** `TOPE_RUTA_DIA` (300), `TOPE_INC_DIA` (400), `TOPE_TESELAS_DIA` (1800) y `TOPE_ETA_DIA` (400) son de *mejor esfuerzo*: cada instancia serverless cuenta por separado, no es un tope exacto. El límite real es el gratuito de TomTom (revisa el vigente en developer.tomtom.com/pricing); al excederse responde 403 y la página vuelve a los tiempos fijos.
 - **Alternativas:** `ALTERNATIVAS_RUTA` (0 a 3, por defecto 2) controla cuántas rutas alternativas se piden. Si TomTom no las acepta junto con el modo camión, se reintenta sin alternativas antes de caer a modo carro.
 - **Netlify gratis:** puede usar créditos mensuales compartidos entre tus sitios; cada despliegue y el ancho de banda consumen. Revisa tu uso en Netlify → Billing.
 - **Mapa base:** los mosaicos públicos de OpenStreetMap son para uso ligero; si el sitio crece, cambia a un proveedor de mosaicos.
