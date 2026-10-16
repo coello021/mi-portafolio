@@ -9,7 +9,7 @@ Página web con mapa nocturno (Leaflet + OpenStreetMap) que, al elegir una sucur
 - **Accidentes, cierres y obras:** la página consulta `/api/incidentes` (API de incidentes de TomTom, la misma llave) y muestra, con texto, calle y horas, los que quedan a menos de 200 m de la ruta elegida, además de un punto de color en el mapa. La red mide más de 10,000 km², el máximo por consulta de TomTom, así que la función la divide en franjas; el resultado es igual para todos y se cachea 5 min. Si TomTom no incluye esta consulta en tu plan, o no responde, la página lo dice y el resto sigue funcionando. No se sabe de antemano qué tan completa es la cobertura en El Salvador: hay que comprobarla en la práctica.
 - Los tramos sin color de demora no significan "vía libre garantizada": significan que TomTom no reporta demoras ahí en este momento.
 - La página ya no dibuja las teselas de tráfico general de TomTom sobre todo el mapa (se quitaron los interruptores): solo se consulta la ruta y los incidentes de lo que se elige, lo que gasta mucha menos cuota. La función `/api/tiles` sigue en el proyecto por si se quiere volver a usar, pero la página no la llama.
-- El panel solo filtra por zona (Todas, Gran San Salvador, Occidente, Oriente) y por texto. Si la consulta en vivo falla, el panel muestra el motivo entre paréntesis (por ejemplo, "TomTom respondió 403").
+- El panel solo filtra por zona (Todas, Gran San Salvador, Occidente, Oriente); no hay buscador de texto. Si la consulta en vivo falla, el panel muestra el motivo entre paréntesis (por ejemplo, "TomTom respondió 403").
 - El mapa base es OpenStreetMap con un filtro de color oscuro aplicado en el navegador; no hay otro proveedor de mapas.
 
 ## Estructura

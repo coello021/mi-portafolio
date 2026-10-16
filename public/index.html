@@ -64,9 +64,7 @@ header p{margin:0;color:var(--muted);font-size:13px}
 .cuerpo{flex:1;overflow:auto;padding:12px 18px 18px;min-height:0;scrollbar-width:thin;scrollbar-color:#2c4658 transparent}
 #asa{display:none}
 
-input[type=search]{width:100%;padding:9px 12px;border:1px solid var(--linea);border-radius:10px;background:var(--hund);color:var(--fg);font:inherit}
-input[type=search]::placeholder{color:var(--muted)}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0}
 .chip{border:1px solid var(--linea);background:transparent;border-radius:999px;padding:3px 11px;font-size:12.5px;color:var(--muted)}
 .chip:hover{color:var(--fg)}
 .chip[aria-pressed=true]{background:var(--fg);border-color:var(--fg);color:var(--noche);font-weight:500}
@@ -248,7 +246,7 @@ const norm = (t)=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerC
 const HOY = new Date().toISOString().slice(0,10);
 const MOVIL = ()=>window.matchMedia('(max-width:820px)').matches;
 
-const S = { suc:[], cd:null, rutas:new Map(), cierres:[], sel:null, zona:'Todas', estado:'Todos', q:'',
+const S = { suc:[], cd:null, rutas:new Map(), cierres:[], sel:null, zona:'Todas',
   trafico:false, tab:'suc',
   vivo:new Map(), alt:0, vEstado:'off', inc:null, incT:0 };   // inc: null = sin cargar, 'fallo', o lista
 
@@ -381,12 +379,7 @@ Leyenda.addTo(map);
 
 // ---------- datos derivados ----------
 function visibles(){
-  const q=norm(S.q);
-  return S.suc.filter(s=>{
-    if(S.zona!=='Todas' && s.zona!==S.zona) return false;
-    if(q && !norm(`${s.sucursal} ${s.municipio} ${s.departamento} ${s.codigo} ${s.direccion}`).includes(q)) return false;
-    return true;
-  });
+  return S.suc.filter(s=> S.zona==='Todas' || s.zona===S.zona);
 }
 const vivoActual = ()=>{ const h=S.sel&&S.vivo.get(S.sel); return h&&h.d&&h.d.rutas&&h.d.rutas.length?h.d:null; };
 function puntos(ru){ return ru._p || (ru._p=decodePoly(ru.poly)); }
@@ -482,18 +475,15 @@ function renderLista(){
   const zonas=['Todas',...new Set(S.suc.map(s=>s.zona))];
   const vis=visibles();
   $('#cuerpo').innerHTML=`
-    <input type="text" id="q" name="filtro-sucursal" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Buscar sucursal, municipio o código" value="${esc(S.q)}" aria-label="Buscar sucursal">
     <div class="chips" aria-label="Zona">${zonas.map(z=>`<button class="chip" data-zona="${esc(z)}" aria-pressed="${S.zona===z}">${esc(z)}</button>`).join('')}</div>
-    <div class="cuenta">${vis.length} sucursal${vis.length===1?'':'es'}${S.q?` para «${esc(S.q)}»`:''}. ${vis.length?'Elige una para ver su ruta en vivo.':''}${S.q?` <button class="chip" data-limpiar>Borrar búsqueda</button>`:''}</div>
+    <div class="cuenta">${vis.length} sucursal${vis.length===1?'':'es'}. Elige una para ver su ruta en vivo.</div>
     ${vis.length? vis.map(s=>{const r=S.rutas.get(s.codigo);return `
       <button class="item" data-cod="${esc(s.codigo)}">
         <span class="punto" style="background:${r?COLOR[r.estado]:'#8da2b0'}"></span>
         <span><b>${esc(s.sucursal)}</b><small>${esc(s.municipio)}, ${esc(s.zona)}</small></span>
         <span class="t">${r?`${r.km} km<small>${fmtMin(r.minutos)}</small>`:''}</span>
-      </button>`}).join('') : `<div class="vacio">Ninguna sucursal coincide${S.q?' con lo que hay escrito en el buscador':' con la zona elegida'}.</div>`}`;
-  const q=$('#q'); q.addEventListener('input',()=>{S.q=q.value;dibujarMapa();renderListaSoloItems();});
+      </button>`}).join('') : '<div class="vacio">No hay sucursales en esta zona.</div>'}`;
 }
-function renderListaSoloItems(){ const f=$('#q'); const pos=f.selectionStart; renderLista(); const n=$('#q'); n.focus(); n.setSelectionRange(pos,pos); }
 function renderCierres(){
   $('#cuerpo').innerHTML = `<button class="btn-sec" id="btn-actualizar">Actualizar cierres (subir reporte)</button><p class="sub">VMT, MOP y FOVIAL no publican una API: los cierres vienen del último reporte subido. Revisa siempre la fecha de vigencia.</p>` +
     S.cierres.map(c=>{const v=vigencia(c);return `
@@ -632,8 +622,7 @@ $('#cuerpo').addEventListener('click',e=>{
   if(e.target.closest('#btn-actualizar')) return abrirDlg();
   const z=e.target.closest('[data-zona]'), it=e.target.closest('[data-cod]'), ci=e.target.closest('[data-cie]'),
         al=e.target.closest('[data-alt]'), tr=e.target.closest('[data-t]'), ic=e.target.closest('[data-inc]');
-  if(e.target.closest('[data-limpiar]')){ S.q=''; dibujarMapa(); ajustarVista(); render(); }
-  else if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
+  if(z){S.zona=z.dataset.zona;dibujarMapa();ajustarVista();render();}
   else if(it) seleccionar(it.dataset.cod);
   else if(al) elegirAlt(+al.dataset.alt);
   else if(tr){ const d=vivoActual(); if(d){ const ru=d.rutas[S.alt], t=ru.tramos[+tr.dataset.t]; fit(L.latLngBounds(puntos(ru).slice(t.a,t.b+1)),{maxZoom:16}); } }
@@ -727,7 +716,6 @@ $('#dlg-ok').onclick=async()=>{
   } else avisar('Tráfico en vivo desactivado (sin llave configurada o sin servidor). Se muestran los tiempos estimados fijos.', false);
 
   if(leyendaEl) leyendaEl.innerHTML=htmlLeyenda();
-  S.q=''; // al abrir la página nunca hay un filtro de texto puesto
   dibujarMapa(); ajustarVista(); render();
 })();
 })();
